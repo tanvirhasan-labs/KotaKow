@@ -1,0 +1,70 @@
+name: Build KotaKow Portable Windows EXE
+
+on:
+  push:
+    branches: ["main", "master"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies & PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Generate Windows application icon
+        run: python scripts/generate_icon.py
+
+      - name: Build single portable KotaKow.exe
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean `
+            --onefile --noconsole `
+            --name KotaKow `
+            --icon=assets/kotakow.ico `
+            --collect-data certifi `
+            --collect-all _sounddevice_data `
+            --hidden-import sounddevice `
+            --hidden-import _sounddevice_data `
+            main.py
+
+      - name: Verify KotaKow.exe output
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "dist/KotaKow.exe")) {
+            Write-Error "Build failed: dist/KotaKow.exe not found!"
+            exit 1
+          }
+          Get-Item "dist/KotaKow.exe" | Format-List Name, Length, FullName
+
+      - name: Upload portable KotaKow.exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: KotaKow-Windows-x64
+          path: dist/KotaKow.exe
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Create GitHub Release on version tags
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/KotaKow.exe
+          generate_release_notes: true
